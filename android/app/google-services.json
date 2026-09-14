@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "655735616729",
+    "project_id": "ayo-laundry-app",
+    "storage_bucket": "ayo-laundry-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:655735616729:android:2355804948163a4e563ac8",
+        "android_client_info": {
+          "package_name": "com.example.ayo_laundry_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAFPfMH5Dt15yOwNyVyj3-3pezdZV2usXU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
