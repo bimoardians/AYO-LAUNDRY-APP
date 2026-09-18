@@ -72,18 +72,12 @@ class HomePage extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const SizedBox(height: 20),
-                          _buildBanner(),
+                          _buildBanner(), // Banner Promo Atas
                           const SizedBox(height: 30),
-                          const Text(
-                            'Layanan Kami',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 15),
-                          _buildServicesSection(),
+                          
+                          // BANNER LAYANAN KAMI YANG BARU (GAMBAR)
+                          _buildBannerLayanan(), 
+                          
                           const SizedBox(height: 20),
                         ],
                       ),
@@ -142,44 +136,14 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  Widget _buildServicesSection() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        _buildServiceCard('Cuci Kilat', 'Rp: 10.000/Kg', Icons.local_laundry_service),
-        _buildServiceCard('Cuci Reguler', 'Rp: 7.000/Kg', Icons.local_laundry_service_outlined),
-        _buildServiceCard('Setrika', 'Rp: 10.000/Kg', Icons.iron),
-      ],
-    );
-  }
-
-  Widget _buildServiceCard(String title, String price, IconData icon) {
-    return Container(
-      width: 105,
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE0E0E0),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))
-        ]
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 40, color: Colors.black87),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            price,
-            style: const TextStyle(fontSize: 11, color: Colors.black87),
-            textAlign: TextAlign.center,
-          ),
-        ],
+  // --- FUNGSI BARU: MENAMPILKAN GAMBAR LAYANAN KAMI ---
+  Widget _buildBannerLayanan() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16), // Sudut melengkung biar rapi
+      child: Image.asset(
+        'assets/membership.png', // Pastikan nama file gambarnya sudah benar
+        width: double.infinity,
+        fit: BoxFit.cover,
       ),
     );
   }
@@ -204,7 +168,7 @@ class HomePage extends StatelessWidget {
             icon: Icons.receipt_long_outlined, 
             label: 'Pesanan',
             onTap: () {
-              Navigator.push(
+              Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => const PesananPage()),
               );
@@ -215,7 +179,7 @@ class HomePage extends StatelessWidget {
             icon: Icons.local_offer_outlined, 
             label: 'Promo',
             onTap: () {
-              Navigator.push(
+              Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => const PromoPage()),
               );
@@ -226,7 +190,7 @@ class HomePage extends StatelessWidget {
             icon: Icons.mail_outline, 
             label: 'Inbox',
             onTap: () {
-              Navigator.push(
+              Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => const InboxPage()),
               );
@@ -234,7 +198,6 @@ class HomePage extends StatelessWidget {
           ),
           
           // Tombol Pindah ke Profile
-          // Tombol Pindah ke Profile (Ganti pakai ini)
           _BottomNavProfileIcon(
             onTap: () {
               Navigator.pushReplacement(
@@ -1105,7 +1068,7 @@ class PromoPage extends StatelessWidget {
 }
 
 // ==========================================
-// HALAMAN 5: PESANAN PAGE (STATEFUL)
+// HALAMAN 5: PESANAN PAGE (FULL MENU LAUNDRY)
 // ==========================================
 class PesananPage extends StatefulWidget {
   const PesananPage({super.key});
@@ -1115,169 +1078,205 @@ class PesananPage extends StatefulWidget {
 }
 
 class _PesananPageState extends State<PesananPage> {
-  // Variabel untuk menyimpan jumlah Kilo masing-masing layanan
-  int qtyCuciKilat = 0; //
-  int qtyCuciNormal = 0; // 
-  int qtySetrika = 0;    // 
+  // Map dinamis untuk menyimpan jumlah pesanan tiap item
+  Map<String, int> keranjang = {};
 
-  // Harga masing-masing layanan
-  final int hargaCuciKilat = 10000;
-  final int hargaCuciNormal = 7000;
-  final int hargaSetrika = 10000;
+  // Fungsi untuk menambah/mengurangi item
+  void _updateKeranjang(String namaItem, int perubahan) {
+    setState(() {
+      int jumlahSekarang = keranjang[namaItem] ?? 0;
+      int jumlahBaru = jumlahSekarang + perubahan;
+      if (jumlahBaru > 0) {
+        keranjang[namaItem] = jumlahBaru;
+      } else {
+        keranjang.remove(namaItem);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: const Text('Buat Pesanan', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+        backgroundColor: const Color(0xFFFFD54F),
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: Column(
         children: [
-          // Latar Belakang Diagonal
-          Positioned.fill(
-            child: CustomPaint(
-              painter: DiagonalBackgroundPainter(),
-            ),
-          ),
-          
-          SafeArea(
-            child: Column(
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
               children: [
-                _buildHeader(),
-                
-                // Kontainer Putih Pesanan Utama
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                    child: Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(top: 20, bottom: 20),
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9F9F9),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 10,
-                            offset: Offset(0, 5),
-                          )
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          // Daftar Pesanan (Bisa di-scroll kalau kepanjangan)
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: Column(
-                                children: [
-                                  _buildOrderItem(
-                                    title: 'Cuci Kilat',
-                                    price: hargaCuciKilat,
-                                    qty: qtyCuciKilat,
-                                    icon: Icons.local_laundry_service,
-                                    onAdd: () => setState(() => qtyCuciKilat++),
-                                    onRemove: () {
-                                      if (qtyCuciKilat > 0) setState(() => qtyCuciKilat--);
-                                    },
-                                  ),
-                                  const SizedBox(height: 15),
-                                  _buildOrderItem(
-                                    title: 'Cuci Normal',
-                                    price: hargaCuciNormal,
-                                    qty: qtyCuciNormal,
-                                    icon: Icons.local_laundry_service_outlined,
-                                    onAdd: () => setState(() => qtyCuciNormal++),
-                                    onRemove: () {
-                                      if (qtyCuciNormal > 0) setState(() => qtyCuciNormal--);
-                                    },
-                                  ),
-                                  const SizedBox(height: 15),
-                                  _buildOrderItem(
-                                    title: 'Setrika',
-                                    price: hargaSetrika,
-                                    qty: qtySetrika,
-                                    icon: Icons.iron,
-                                    onAdd: () => setState(() => qtySetrika++),
-                                    onRemove: () {
-                                      if (qtySetrika > 0) setState(() => qtySetrika--);
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          
-                          // Tombol Bawah (Batal & Lanjut)
-                          const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    // Aksi reset atau batal
-                                    setState(() {
-                                      qtyCuciKilat = 0;
-                                      qtyCuciNormal = 0;
-                                      qtySetrika = 0;
-                                    });
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFFE0E0E0), // Abu-abu
-                                    foregroundColor: Colors.black87,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(vertical: 15),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Batalkan pembayaran',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    // Pindah ke halaman Pembayaran
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(builder: (context) => const PembayaranPage()),
-                                    );
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    // ... kode style tombol lu tetap biarkan sama
-                                    backgroundColor: const Color(0xFF76FF03), // Hijau stabilo
-                                    foregroundColor: Colors.black87,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(vertical: 15),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Lanjut Pembayaran',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        ],
-                      ),
-                    ),
-                  ),
+                _buildKategoriCard(
+                  'KILOAN (1 HARI)', //[cite: 10]
+                  [
+                    'CUCI SETRIKA : 7 K (MIN 3 KG)', //[cite: 10]
+                    'CUCI LIPAT : 5 K (MIN 3 KG)', //[cite: 10]
+                    'SETRIKA : 5 K', //[cite: 10]
+                    'EXPRESS 6 JAM : +3 K / KG', //[cite: 10]
+                    'EXPRESS 4 JAM : +6 K / KG', //[cite: 10]
+                  ],
                 ),
-                
-                // Bottom Navigation Bar Pesanan
-                _buildPesananBottomNavigationBar(context),
+                const SizedBox(height: 16),
+                _buildKategoriCard(
+                  'SATUAN (3 HARI)', //[cite: 10]
+                  [
+                    'KAOS : 15 K', //[cite: 10]
+                    'KEMEJA : 15 K', //[cite: 10]
+                    'CELANA : 15 K', //[cite: 10]
+                    'JAKET : 15 K', //[cite: 10]
+                    'SPREI : 15 K', //[cite: 10]
+                    'SELIMUT : 15 K', //[cite: 10]
+                    'DRESS SHORT : 20 K', //[cite: 10]
+                    'DRESS LONG : 30 K', //[cite: 10]
+                    'BED COVER S : 20 K', //[cite: 10]
+                    'BED COVER M : 25 K', //[cite: 10]
+                    'BED COVER L : 30 K', //[cite: 10]
+                    'KARPET /MTR : 20 K', //[cite: 10]
+                    'EXPRESS 6 JAM : + 5 K / PCS', //[cite: 10]
+                    'EXPRESS 4 JAM : +10 K / PCS', //[cite: 10]
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildKategoriCard(
+                  'JUGA SEDIA CUCI', //[cite: 11]
+                  [
+                    'HELM 20 K', //[cite: 11]
+                    'TAS 20 K', //[cite: 11]
+                    'SEPATU 25 K', //[cite: 11]
+                    'BONEKA 20(S)', //[cite: 11]
+                    'BONEKA 30(M)', //[cite: 11]
+                    'BONEKA 40(L)', //[cite: 11]
+                    'BONEKA 65(XL)', //[cite: 11]
+                    'BONEKA 85(XXL)', //[cite: 11]
+                    'EXPRESS 6 JAM : + 10K', //[cite: 11]
+                    'EXPRESS 4 JAM : + 20K', //[cite: 11]
+                  ],
+                ),
               ],
             ),
+          ),
+          _buildCheckoutBar(),
+        ],
+      ),
+    );
+  }
+
+  // Desain Kartu Per Kategori
+  Widget _buildKategoriCard(String judul, List<String> items) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: const BoxDecoration(
+              color: Color(0xFF2C3E50),
+              borderRadius: BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
+            ),
+            child: Text(
+              judul,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: items.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              String namaItem = items[index];
+              int qty = keranjang[namaItem] ?? 0;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        namaItem,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => _updateKeranjang(namaItem, -1),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(color: Colors.red.shade100, shape: BoxShape.circle),
+                            child: const Icon(Icons.remove, size: 18, color: Colors.red),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        ),
+                        GestureDetector(
+                          onTap: () => _updateKeranjang(namaItem, 1),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(color: Colors.green.shade100, shape: BoxShape.circle),
+                            child: const Icon(Icons.add, size: 18, color: Colors.green),
+                          ),
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),
     );
   }
 
+  // Desain Bar Bawah untuk Lanjut Pembayaran
+  Widget _buildCheckoutBar() {
+    int totalItem = keranjang.values.fold(0, (sum, item) => sum + item);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -5))],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Total Item:', style: TextStyle(color: Colors.grey, fontSize: 13)),
+              Text('$totalItem', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+            ],
+          ),
+          ElevatedButton(
+            onPressed: totalItem > 0 
+                ? () {
+                    // Navigasi ke halaman Pembayaran (Sesuaikan dengan nama class Pembayaran lu)
+                    // Navigator.push(context, MaterialPageRoute(builder: (context) => const PembayaranPage()));
+                  } 
+                : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD54F),
+              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Lanjut Bayar', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+          )
+        ],
+      ),
+    );
+  }
+}
   // --- Header ---
   Widget _buildHeader() {
     return Padding(
@@ -1436,7 +1435,6 @@ class _PesananPageState extends State<PesananPage> {
       ),
     );
   }
-}
 
 // ==========================================
 // HALAMAN 6: PEMBAYARAN PAGE (STATEFUL)
