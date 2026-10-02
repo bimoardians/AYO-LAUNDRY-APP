@@ -1083,15 +1083,77 @@ class _PesananPageState extends State<PesananPage> {
 
   // Fungsi untuk menambah/mengurangi item
   void _updateKeranjang(String namaItem, int perubahan) {
-    setState(() {
-      int jumlahSekarang = keranjang[namaItem] ?? 0;
-      int jumlahBaru = jumlahSekarang + perubahan;
-      if (jumlahBaru > 0) {
-        keranjang[namaItem] = jumlahBaru;
-      } else {
-        keranjang.remove(namaItem);
+  setState(() {
+    int jumlahSekarang = keranjang[namaItem] ?? 0;
+
+    // Cek apakah item termasuk layanan kiloan minimum 3 KG
+    bool isKiloan = namaItem.startsWith('CUCI SETRIKA') ||
+        namaItem.startsWith('CUCI LIPAT') ||
+        namaItem.startsWith('SETRIKA');
+
+    int jumlahBaru;
+
+    if (isKiloan) {
+      // Saat pertama kali tekan +
+      if (jumlahSekarang == 0 && perubahan > 0) {
+        jumlahBaru = 3;
       }
-    });
+      // Saat jumlah 3 KG dan tekan -
+      else if (jumlahSekarang == 3 && perubahan < 0) {
+        jumlahBaru = 0;
+      }
+      // Normal
+      else {
+        jumlahBaru = jumlahSekarang + perubahan;
+      }
+    } else {
+      // Item satuan biasa
+      jumlahBaru = jumlahSekarang + perubahan;
+    }
+
+    if (jumlahBaru > 0) {
+      keranjang[namaItem] = jumlahBaru;
+    } else {
+      keranjang.remove(namaItem);
+    }
+  });
+}
+
+  // Fungsi untuk menentukan harga setiap item
+  int _getHarga(String namaItem) {
+    if (namaItem.startsWith('CUCI SETRIKA')) return 7000;
+    if (namaItem.startsWith('CUCI LIPAT')) return 5000;
+    if (namaItem.startsWith('SETRIKA')) return 5000;
+    if (namaItem.startsWith('EXPRESS 6 JAM : +3 K')) return 3000;
+    if (namaItem.startsWith('EXPRESS 4 JAM : +6 K')) return 6000;
+
+    if (namaItem.startsWith('KAOS')) return 15000;
+    if (namaItem.startsWith('KEMEJA')) return 15000;
+    if (namaItem.startsWith('CELANA')) return 15000;
+    if (namaItem.startsWith('JAKET')) return 15000;
+    if (namaItem.startsWith('SPREI')) return 15000;
+    if (namaItem.startsWith('SELIMUT')) return 15000;
+    if (namaItem.startsWith('DRESS SHORT')) return 20000;
+    if (namaItem.startsWith('DRESS LONG')) return 30000;
+    if (namaItem.startsWith('BED COVER S')) return 20000;
+    if (namaItem.startsWith('BED COVER M')) return 25000;
+    if (namaItem.startsWith('BED COVER L')) return 30000;
+    if (namaItem.startsWith('KARPET')) return 20000;
+    if (namaItem.startsWith('EXPRESS 6 JAM : + 5 K')) return 5000;
+    if (namaItem.startsWith('EXPRESS 4 JAM : +10 K')) return 10000;
+
+    if (namaItem.startsWith('HELM')) return 20000;
+    if (namaItem.startsWith('TAS')) return 20000;
+    if (namaItem.startsWith('SEPATU')) return 25000;
+    if (namaItem.startsWith('BONEKA 20')) return 20000;
+    if (namaItem.startsWith('BONEKA 30')) return 30000;
+    if (namaItem.startsWith('BONEKA 40')) return 40000;
+    if (namaItem.startsWith('BONEKA 65')) return 65000;
+    if (namaItem.startsWith('BONEKA 85')) return 85000;
+    if (namaItem.startsWith('EXPRESS 6 JAM : + 10K')) return 10000;
+    if (namaItem.startsWith('EXPRESS 4 JAM : + 20K')) return 20000;
+
+    return 0;
   }
 
   @override
@@ -1099,11 +1161,32 @@ class _PesananPageState extends State<PesananPage> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('Buat Pesanan', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-        backgroundColor: const Color(0xFFFFD54F),
-        elevation: 0,
-        centerTitle: true,
-      ),
+  leading: IconButton(
+    icon: const Icon(
+      Icons.arrow_back,
+      color: Colors.black87,
+    ),
+    onPressed: () {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const HomePage(),
+        ),
+        (route) => false,
+      );
+    },
+  ),
+  title: const Text(
+    'Buat Pesanan',
+    style: TextStyle(
+      fontWeight: FontWeight.bold,
+      color: Colors.black87,
+    ),
+  ),
+  backgroundColor: const Color(0xFFFFD54F),
+  elevation: 0,
+  centerTitle: true,
+),
       body: Column(
         children: [
           Expanded(
@@ -1115,7 +1198,7 @@ class _PesananPageState extends State<PesananPage> {
                   [
                     'CUCI SETRIKA : 7 K (MIN 3 KG)', //[cite: 10]
                     'CUCI LIPAT : 5 K (MIN 3 KG)', //[cite: 10]
-                    'SETRIKA : 5 K', //[cite: 10]
+                    'SETRIKA : 5 K (MIN 3 KG)', //[cite: 10]
                     'EXPRESS 6 JAM : +3 K / KG', //[cite: 10]
                     'EXPRESS 4 JAM : +6 K / KG', //[cite: 10]
                   ],
@@ -1239,43 +1322,116 @@ class _PesananPageState extends State<PesananPage> {
   }
 
   // Desain Bar Bawah untuk Lanjut Pembayaran
-  Widget _buildCheckoutBar() {
-    int totalItem = keranjang.values.fold(0, (sum, item) => sum + item);
+Widget _buildCheckoutBar() {
+  int totalItem = keranjang.values.fold(0, (sum, item) => sum + item);
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -5))],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Total Item:', style: TextStyle(color: Colors.grey, fontSize: 13)),
-              Text('$totalItem', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-            ],
-          ),
-          ElevatedButton(
-            onPressed: totalItem > 0 
-                ? () {
-                    // Navigasi ke halaman Pembayaran (Sesuaikan dengan nama class Pembayaran lu)
-                    // Navigator.push(context, MaterialPageRoute(builder: (context) => const PembayaranPage()));
-                  } 
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFD54F),
-              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  int totalHarga = keranjang.entries.fold(0, (sum, entry) {
+    final harga = _getHarga(entry.key);
+    final qty = entry.value;
+    return sum + (harga * qty);
+  });
+
+  String formattedHarga = totalHarga
+      .toString()
+      .replaceAll(RegExp(r'\B(?=(\d{3})+(?!\d))'), '.');
+
+  return Container(
+    padding: const EdgeInsets.all(20),
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black12,
+          blurRadius: 10,
+          offset: Offset(0, -5),
+        ),
+      ],
+    ),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            // TOTAL ITEM
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Total Item:',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  '$totalItem',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                ),
+              ],
             ),
-            child: const Text('Lanjut Bayar', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-          )
-        ],
-      ),
-    );
-  }
+
+            const SizedBox(width: 30),
+
+            // TOTAL HARGA
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Total Harga:',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  'Rp$formattedHarga',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+
+        // TOMBOL LANJUT BAYAR
+        ElevatedButton(
+          onPressed: totalItem > 0
+              ? () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PembayaranPage(),
+                    ),
+                  );
+                }
+              : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFFD54F),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 30,
+              vertical: 15,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: const Text(
+            'Lanjut Bayar',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 }
   // --- Header ---
   Widget _buildHeader() {
