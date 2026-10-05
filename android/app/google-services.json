@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:655735616729:android:b7182ee98b46c141563ac8",
+        "android_client_info": {
+          "package_name": "AYOLAUNDRYDelivery.com"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAFPfMH5Dt15yOwNyVyj3-3pezdZV2usXU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:655735616729:android:2355804948163a4e563ac8",
         "android_client_info": {
           "package_name": "com.example.ayo_laundry_app"
