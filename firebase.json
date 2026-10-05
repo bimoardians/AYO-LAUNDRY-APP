@@ -1,1 +1,37 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"ayo-laundry-app","appId":"1:655735616729:android:2355804948163a4e563ac8","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"ayo-laundry-app","configurations":{"android":"1:655735616729:android:2355804948163a4e563ac8","ios":"1:655735616729:ios:5565a0d300c6bac2563ac8","web":"1:655735616729:web:9fd3b4ed99b7cc6d563ac8"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "ayo-laundry-app",
+          "appId": "1:655735616729:android:2355804948163a4e563ac8",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "ayo-laundry-app",
+          "configurations": {
+            "android": "1:655735616729:android:2355804948163a4e563ac8",
+            "ios": "1:655735616729:ios:5565a0d300c6bac2563ac8",
+            "web": "1:655735616729:web:9fd3b4ed99b7cc6d563ac8"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
