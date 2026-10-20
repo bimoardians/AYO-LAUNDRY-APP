@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart'; // Tambahan wajib 1
-import 'firebase_options.dart'; // Tambahan wajib 2
-import 'package:firebase_auth/firebase_auth.dart'; // Tambahan untuk sistem Login
+import 'services/api_service.dart';
 import 'dart:io'; // Wajib ditambahin buat ngurus file gambar dari galeri
 import 'package:image_picker/image_picker.dart'; // Wajib ditambahin buat buka galeri
 
@@ -11,16 +9,8 @@ int globalCountKilat = 0;
 int globalCountRegular = 0;
 int globalCountSetrika = 0;
 
-// Fungsi main sekarang ditambahkan 'async'
-void main() async {
-  // Baris ini wajib ada agar Flutter memastikan semua komponen siap sebelum menyalakan Firebase
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Perintah untuk menyalakan Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
   runApp(const AyoLaundryApp());
 }
 
@@ -36,7 +26,7 @@ class AyoLaundryApp extends StatelessWidget {
         fontFamily: 'Roboto',
       ),
       // Aplikasi dimulai dari HomePage
-      home: const LoginPage(),
+      home: const AuthGate(),
     );
   }
 }
@@ -44,6 +34,26 @@ class AyoLaundryApp extends StatelessWidget {
 // ==========================================
 // HALAMAN 1: HOME PAGE
 // ==========================================
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  late final Future<bool> _session = ApiService.restoreSession();
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _session,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState != ConnectionState.done) {
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      }
+      return snapshot.data == true ? const HomePage() : const LoginPage();
+    },
+  );
+}
+
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -245,58 +255,47 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // 2. Fungsi Edit Nama (Simpan ke Firebase Auth)
-  void _editNamaDialog(User? user) {
-    TextEditingController namaController = TextEditingController(
-      text: user?.displayName ?? 'Pelanggan Setia',
-    );
-
-    showDialog(
+  // Edit nama melalui PHP API, lalu update tampilan profil.
+  Future<void> _editNamaDialog() async {
+    final namaController = TextEditingController(text: ApiService.nama ?? '');
+    final namaBaru = await showDialog<String>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Ubah Nama Profil', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          content: TextField(
-            controller: namaController,
-            decoration: InputDecoration(
-              labelText: 'Nama Lengkap',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            ),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Ubah Nama Profil', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        content: TextField(
+          controller: namaController,
+          decoration: InputDecoration(labelText: 'Nama Lengkap', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Batal')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, namaController.text.trim()),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+            child: const Text('Simpan'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Batal', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (namaController.text.isNotEmpty && user != null) {
-                  // Update nama ke Firebase Auth
-                  await user.updateDisplayName(namaController.text);
-                  await user.reload(); // Refresh data user
-                  setState(() {}); // Refresh tampilan UI
-                }
-                if (mounted) Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
-              child: const Text('Simpan'),
-            ),
-          ],
-        );
-      },
+        ],
+      ),
     );
+    namaController.dispose();
+    if (!mounted || namaBaru == null || namaBaru.isEmpty) return;
+    try {
+      await ApiService.ubahNama(namaBaru);
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nama berhasil diperbarui')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'), backgroundColor: Colors.red));
+    }
   }
 
-  // 3. Fungsi Logout
   Future<void> _logout() async {
-    await FirebaseAuth.instance.signOut();
-    if (mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-        (Route<dynamic> route) => false,
-      );
-    }
+    await ApiService.logout();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginPage()),
+      (route) => false,
+    );
   }
 
   // 4. Fungsi Edit Alamat
@@ -343,12 +342,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final emailUser = user?.email ?? 'Belum Login';
-    // Ambil nama dari Firebase, kalau belum di-set pakai default 'Pelanggan Setia'
-    final namaUser = (user?.displayName != null && user!.displayName!.isNotEmpty) 
-        ? user.displayName! 
-        : 'Pelanggan Setia';
+    final emailUser = ApiService.email ?? 'Belum Login';
+    final namaUser = ApiService.nama ?? 'Pelanggan Setia';
 
     return Scaffold(
       body: Stack(
@@ -366,7 +361,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: Column(
                       children: [
                         const SizedBox(height: 30),
-                        _buildProfileCard(user, namaUser, emailUser),
+                        _buildProfileCard(namaUser, emailUser),
                       ],
                     ),
                   ),
@@ -395,7 +390,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildProfileCard(User? user, String namaUser, String emailUser) {
+  Widget _buildProfileCard(String namaUser, String emailUser) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -453,7 +448,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                         const SizedBox(width: 6),
                         GestureDetector(
-                          onTap: () => _editNamaDialog(user),
+                          onTap: _editNamaDialog,
                           child: const Icon(Icons.edit, color: Colors.blue, size: 18),
                         ),
                       ],
@@ -1893,7 +1888,7 @@ class _PembayaranPageState extends State<PembayaranPage> {
 }
 
 // ==========================================
-// HALAMAN 7: LOGIN PAGE (DINAMIS FIREBASE)
+// HALAMAN 7: LOGIN PAGE (PHP + MYSQL)
 // ==========================================
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -1916,49 +1911,20 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  // Fungsi Login ke Firebase
   Future<void> _loginDinamic() async {
-    setState(() {
-      _isLoading = true; // Nyalakan loading
-    });
-
+    if (_emailController.text.trim().isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Isi email dan password.')));
+      return;
+    }
+    setState(() => _isLoading = true);
     try {
-      // Proses ngecek ke server Firebase
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-
-      // Kalau sukses, masuk ke HomePage
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const HomePage()),
-          (Route<dynamic> route) => false,
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      // Kalau gagal (password salah / email gak ada), tangkap errornya
-      String pesanError = 'Terjadi kesalahan.';
-      if (e.code == 'user-not-found') {
-        pesanError = 'Email tidak terdaftar.';
-      } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
-        pesanError = 'Password salah.';
-      } else if (e.code == 'invalid-email') {
-        pesanError = 'Format email salah.';
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(pesanError), backgroundColor: Colors.red),
-        );
-      }
+      await ApiService.login(_emailController.text.trim(), _passwordController.text);
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const HomePage()), (route) => false);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'), backgroundColor: Colors.red));
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false; // Matikan loading
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -2069,7 +2035,7 @@ class _LoginPageState extends State<LoginPage> {
 }
 
 // ==========================================
-// HALAMAN 8: REGISTER PAGE (DINAMIS FIREBASE)
+// HALAMAN 8: REGISTER PAGE (PHP + MYSQL)
 // ==========================================
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -2093,53 +2059,22 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  // Fungsi Register ke Firebase
   Future<void> _registerDinamic() async {
-    // Validasi kalau ada kolom yang kosong
-    if (_namaController.text.isEmpty || _emailController.text.isEmpty || _passwordController.text.isEmpty) {
+    if (_namaController.text.trim().isEmpty || _emailController.text.trim().isEmpty || _passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Semua kolom harus diisi!'), backgroundColor: Colors.red));
       return;
     }
-
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
-      // Bikin akun di server Firebase
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
-      );
-
-      // (Opsional) Lu bisa nyimpen Nama user nanti pakai Firestore/Database.
-      // Untuk sekarang, kita buatkan akunnya dulu.
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Akun berhasil dibuat! Silakan Login.'), backgroundColor: Colors.green),
-        );
-        Navigator.pop(context); // Kembali ke halaman Login
-      }
-    } on FirebaseAuthException catch (e) {
-      String pesanError = 'Terjadi kesalahan.';
-      if (e.code == 'weak-password') {
-        pesanError = 'Password terlalu lemah (minimal 6 karakter).';
-      } else if (e.code == 'email-already-in-use') {
-        pesanError = 'Email sudah terdaftar. Silakan login.';
-      } else if (e.code == 'invalid-email') {
-        pesanError = 'Format email salah.';
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(pesanError), backgroundColor: Colors.red));
-      }
+      await ApiService.register(_namaController.text.trim(), _emailController.text.trim(), _passwordController.text);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pop(context);
+      messenger.showSnackBar(const SnackBar(content: Text('Akun dibuat. Silakan login!'), backgroundColor: Colors.green));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'), backgroundColor: Colors.red));
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -2198,7 +2133,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         controller: _passwordController,
                         obscureText: true,
                         decoration: InputDecoration(
-                          labelText: 'Password (min. 6 karakter)',
+                          labelText: 'Password (min. 8 karakter)',
                           prefixIcon: const Icon(Icons.lock_outline),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
