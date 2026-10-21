@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'services/api_service.dart';
+import 'admin_owner_pages.dart';
 import 'dart:io'; // Wajib ditambahin buat ngurus file gambar dari galeri
 import 'package:image_picker/image_picker.dart'; // Wajib ditambahin buat buka galeri
 
@@ -34,6 +36,20 @@ class AyoLaundryApp extends StatelessWidget {
 // ==========================================
 // HALAMAN 1: HOME PAGE
 // ==========================================
+// Halaman awal berdasarkan role yang sudah diterima dari PHP API.
+Widget halamanSesuaiRole() {
+  switch (ApiService.role) {
+    case 'admin':
+      return const AdminPage();
+    case 'owner':
+      return const OwnerPage();
+    case 'pelanggan':
+      return const HomePage();
+    default:
+      return const LoginPage();
+  }
+}
+
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
   @override
@@ -49,7 +65,7 @@ class _AuthGateState extends State<AuthGate> {
       if (snapshot.connectionState != ConnectionState.done) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
-      return snapshot.data == true ? const HomePage() : const LoginPage();
+      return snapshot.data == true ? halamanSesuaiRole() : const LoginPage();
     },
   );
 }
@@ -1243,73 +1259,88 @@ class _PesananPageState extends State<PesananPage> {
     );
   }
 
-  // Desain Kartu Per Kategori
+  // Kategori dapat dibuka/ditutup tanpa menghapus jumlah yang sudah dipilih.
   Widget _buildKategoriCard(String judul, List<String> items) {
     return Card(
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 2,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      margin: EdgeInsets.zero,
+      child: ExpansionTile(
+        key: PageStorageKey<String>('kategori_$judul'),
+        initiallyExpanded: false,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        childrenPadding: EdgeInsets.zero,
+        backgroundColor: const Color(0xFF2C3E50),
+        collapsedBackgroundColor: const Color(0xFF2C3E50),
+        collapsedTextColor: Colors.white,
+        textColor: Colors.white,
+        collapsedIconColor: Colors.white,
+        iconColor: Colors.white,
+        // Header tetap biru gelap saat bagian dibuka.
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Text(
+          judul,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
         children: [
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: const BoxDecoration(
-              color: Color(0xFF2C3E50),
-              borderRadius: BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
-            ),
-            child: Text(
-              judul,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: items.length,
-            separatorBuilder: (context, index) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              String namaItem = items[index];
-              int qty = keranjang[namaItem] ?? 0;
+            color: const Color(0xFFF8F5FA),
+            child: Column(children: [
+          for (int index = 0; index < items.length; index++) ...[
+            if (index > 0) const Divider(height: 1),
+            Builder(builder: (context) {
+              final namaItem = items[index];
+              final qty = keranjang[namaItem] ?? 0;
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
                       child: Text(
                         namaItem,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
                       ),
                     ),
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () => _updateKeranjang(namaItem, -1),
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(color: Colors.red.shade100, shape: BoxShape.circle),
-                            child: const Icon(Icons.remove, size: 18, color: Colors.red),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text('$qty', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        ),
-                        GestureDetector(
-                          onTap: () => _updateKeranjang(namaItem, 1),
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(color: Colors.green.shade100, shape: BoxShape.circle),
-                            child: const Icon(Icons.add, size: 18, color: Colors.green),
-                          ),
-                        ),
-                      ],
-                    )
+                    IconButton(
+                      onPressed: () => _updateKeranjang(namaItem, -1),
+                      icon: const Icon(Icons.remove, color: Colors.red),
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFD8DC),
+                        minimumSize: const Size(32, 32),
+                        padding: const EdgeInsets.all(4),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                    SizedBox(
+                      width: 36,
+                      child: Text(
+                        '$qty',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _updateKeranjang(namaItem, 1),
+                      icon: const Icon(Icons.add, color: Colors.green),
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xFFCBF1D6),
+                        minimumSize: const Size(32, 32),
+                        padding: const EdgeInsets.all(4),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
                   ],
                 ),
               );
-            },
+            }),
+          ],
+            ]),
           ),
         ],
       ),
@@ -1903,6 +1934,34 @@ class _LoginPageState extends State<LoginPage> {
   
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  List<String> _recentEmails = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentEmails();
+  }
+
+  Future<void> _loadRecentEmails() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _recentEmails = prefs.getStringList('recent_login_emails') ?? []);
+  }
+
+  Future<void> _saveRecentEmail(String address) async {
+    if (!_rememberMe) return;
+    final prefs = await SharedPreferences.getInstance();
+    final updated = [address, ..._recentEmails.where((e) => e != address)].take(5).toList();
+    await prefs.setStringList('recent_login_emails', updated);
+    if (mounted) setState(() => _recentEmails = updated);
+  }
+
+  Future<void> _clearRecentEmails() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('recent_login_emails');
+    if (mounted) setState(() => _recentEmails = []);
+  }
+
 
   @override
   void dispose() {
@@ -1919,8 +1978,9 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
     try {
       await ApiService.login(_emailController.text.trim(), _passwordController.text);
+      await _saveRecentEmail(_emailController.text.trim());
       if (!mounted) return;
-      Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const HomePage()), (route) => false);
+      Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => halamanSesuaiRole()), (route) => false);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'), backgroundColor: Colors.red));
     } finally {
@@ -1960,6 +2020,7 @@ class _LoginPageState extends State<LoginPage> {
                       
                       TextField(
                         controller: _emailController,
+                        onChanged: (_) => setState(() {}),
                         keyboardType: TextInputType.emailAddress,
                         decoration: InputDecoration(
                           labelText: 'Email',
@@ -1967,6 +2028,28 @@ class _LoginPageState extends State<LoginPage> {
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
+                      if (_recentEmails.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        ..._recentEmails.where((e) => _emailController.text.isEmpty || e.toLowerCase().contains(_emailController.text.toLowerCase())).take(4).map(
+                          (e) => ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.history, size: 18),
+                            title: Text(e, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                            onTap: () => setState(() {
+                              _emailController.text = e;
+                              _emailController.selection = TextSelection.collapsed(offset: e.length);
+                            }),
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: _clearRecentEmails,
+                            icon: const Icon(Icons.delete_outline, size: 16),
+                            label: const Text('Hapus riwayat email'),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 15),
                       
                       TextField(
