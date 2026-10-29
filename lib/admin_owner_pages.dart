@@ -231,7 +231,7 @@ class _SectionCard extends StatelessWidget {
 }
 
 class _MenuTile extends StatelessWidget {
-  const _MenuTile({required this.title, required this.icon, required this.onTap, this.subtitle});
+  const _MenuTile({required this.title, required this.icon, required this.onTap}) : subtitle = null;
   final String title;
   final String? subtitle;
   final IconData icon;
@@ -454,7 +454,7 @@ class _AdminReportsPageState extends State<_AdminReportsPage> {
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: title, decoration: const InputDecoration(labelText: 'Judul laporan')),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(value: kind, decoration: const InputDecoration(labelText: 'Jenis laporan'),
+          DropdownButtonFormField<String>(initialValue: kind, decoration: const InputDecoration(labelText: 'Jenis laporan'),
             items: ['Penjualan', 'Pesanan'].map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
             onChanged: (value) { if (value != null) update(() => kind = value); }),
           const SizedBox(height: 12),

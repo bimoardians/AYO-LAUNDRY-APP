@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -10,6 +12,10 @@ class ApiService {
   static String? nama;
   static String? email;
   static String? role;
+  static String? alamat;
+  static String? fotoUrl;
+  static const String _rememberKey = 'ayo_remember_session';
+  static bool _rememberMe = false;
   static String? _token;
 
   static Future<Map<String, dynamic>> _request(String path, Map<String, dynamic> body, {bool auth = false}) async {
@@ -26,6 +32,7 @@ class ApiService {
       ).timeout(const Duration(seconds: 15));
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic>) throw Exception('Respons server tidak valid.');
+      if (response.statusCode == 401) throw ApiUnauthorizedException();
       if (response.statusCode < 200 || response.statusCode >= 300 || decoded['success'] != true) {
         throw Exception(decoded['message']?.toString() ?? 'Permintaan gagal.');
       }
@@ -41,30 +48,54 @@ class ApiService {
     await _request('register.php', {'nama': namaBaru, 'email': emailBaru, 'password': password});
   }
 
-  static Future<void> login(String emailInput, String password) async {
+  static void _setUser(Map user) {
+    nama = user['nama']?.toString();
+    email = user['email']?.toString();
+    role = user['role']?.toString();
+    alamat = user['alamat']?.toString();
+    final photo = user['foto_profil']?.toString();
+    fotoUrl = (photo == null || photo.isEmpty) ? null :
+        '$baseUrl/$photo';
+  }
+
+  static Future<void> login(String emailInput, String password,
+      {bool rememberMe = false}) async {
     final data = await _request('login.php', {'email': emailInput, 'password': password});
     final token = data['token'];
     final user = data['user'];
     if (token is! String || user is! Map) throw Exception('Data login server tidak lengkap.');
     _token = token;
-    await _storage.write(key: 'auth_token', value: token);
-    nama = user['nama']?.toString();
-    email = user['email']?.toString();
-    role = user['role']?.toString();
+    _rememberMe = rememberMe;
+    final prefs = await SharedPreferences.getInstance();
+    if (rememberMe) {
+      await _storage.write(key: 'auth_token', value: token);
+      await prefs.setBool(_rememberKey, true);
+    } else {
+      await prefs.setBool(_rememberKey, false);
+      await _storage.delete(key: 'auth_token');
+    }
+    _setUser(user);
+    // Profil melengkapi alamat/foto meskipun login.php lama belum mengirimkannya.
+    await refreshProfile();
   }
 
   static Future<bool> restoreSession() async {
-    _token = await _storage.read(key: 'auth_token');
-    if (_token == null) return false;
+    final prefs = await SharedPreferences.getInstance();
+    _rememberMe = prefs.getBool(_rememberKey) ?? false;
+    if (!_rememberMe) return false;
     try {
+      _token = await _storage.read(key: 'auth_token');
+      if (_token == null || _token!.isEmpty) return false;
       await refreshProfile();
       return true;
-    } catch (_) {
+    } on ApiUnauthorizedException {
       await _storage.delete(key: 'auth_token');
+      await prefs.setBool(_rememberKey, false);
       _token = null;
-      nama = null;
-      email = null;
-      role = null;
+      return false;
+    } catch (_) {
+      // Gangguan koneksi server bukan bukti token kedaluwarsa.
+      _token = null;
       return false;
     }
   }
@@ -73,9 +104,24 @@ class ApiService {
     final data = await _request('profile.php', {}, auth: true);
     final user = data['user'];
     if (user is! Map) throw Exception('Data profil tidak tersedia.');
-    nama = user['nama']?.toString();
-    email = user['email']?.toString();
-    role = user['role']?.toString();
+    _setUser(user);
+  }
+
+  static Future<void> simpanAlamat(String alamatBaru) async {
+    final result = await _request('update_address.php', {'alamat': alamatBaru}, auth: true);
+    alamat = result['alamat']?.toString() ?? alamatBaru;
+  }
+
+  static Future<void> uploadFotoProfil(Uint8List bytes) async {
+    if (bytes.length > 2 * 1024 * 1024) {
+      throw Exception('Foto maksimal 2 MB. Pilih atau kompres gambar lebih kecil.');
+    }
+    final result = await _request('upload_profile.php', {
+      'image_base64': base64Encode(bytes),
+    }, auth: true);
+    final photo = result['foto_profil']?.toString();
+    if (photo == null || photo.isEmpty) throw Exception('Server tidak mengembalikan alamat foto.');
+    fotoUrl = '$baseUrl/$photo';
   }
 
   static Future<void> ubahNama(String namaBaru) async {
@@ -119,7 +165,16 @@ class ApiService {
       nama = null;
       email = null;
       role = null;
+      alamat = null;
+      fotoUrl = null;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_rememberKey, false);
       await _storage.delete(key: 'auth_token');
     }
   }
+}
+
+class ApiUnauthorizedException implements Exception {
+  @override
+  String toString() => 'Sesi kedaluwarsa. Silakan login ulang.';
 }

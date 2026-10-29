@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/api_service.dart';
 import 'admin_owner_pages.dart';
-import 'dart:io'; // Wajib ditambahin buat ngurus file gambar dari galeri
 import 'package:image_picker/image_picker.dart'; // Wajib ditambahin buat buka galeri
 
 // --- VARIABEL GLOBAL ALAMAT & HISTORY ---
@@ -10,6 +9,17 @@ String globalAlamat = 'Alamat belum diatur. Ketuk ikon pensil untuk mengisi alam
 int globalCountKilat = 0;
 int globalCountRegular = 0;
 int globalCountSetrika = 0;
+
+// Foto profil sementara bersama untuk halaman Profil dan bottom navigation.
+final ValueNotifier<ImageProvider?> fotoProfilNotifier = ValueNotifier<ImageProvider?>(null);
+
+void sinkronProfilLokal() {
+  globalAlamat = (ApiService.alamat?.isNotEmpty ?? false)
+      ? ApiService.alamat!
+      : 'Alamat belum diatur. Ketuk ikon pensil untuk mengisi alamat pengiriman Anda.';
+  final url = ApiService.fotoUrl;
+  fotoProfilNotifier.value = url == null || url.isEmpty ? null : NetworkImage(url);
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,7 +67,13 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  late final Future<bool> _session = ApiService.restoreSession();
+  late final Future<bool> _session = _checkSession();
+
+  Future<bool> _checkSession() async {
+    final valid = await ApiService.restoreSession();
+    if (valid) sinkronProfilLokal();
+    return valid;
+  }
   @override
   Widget build(BuildContext context) => FutureBuilder<bool>(
     future: _session,
@@ -249,7 +265,6 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  File? _imageFile;
   final ImagePicker _picker = ImagePicker();
 
   // 1. Fungsi Buka Galeri
@@ -260,9 +275,13 @@ class _ProfilePageState extends State<ProfilePage> {
         imageQuality: 50, // Kompres ukuran gambar biar gak berat
       );
       if (pickedFile != null) {
-        setState(() {
-          _imageFile = File(pickedFile.path);
-        });
+        final bytes = await pickedFile.readAsBytes();
+        if (!mounted) return;
+        await ApiService.uploadFotoProfil(bytes);
+        fotoProfilNotifier.value = MemoryImage(bytes);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto profil berhasil disimpan di server')),
+        );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -306,6 +325,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _logout() async {
     await ApiService.logout();
+    fotoProfilNotifier.value = null;
+    globalAlamat = 'Alamat belum diatur. Ketuk ikon pensil untuk mengisi alamat pengiriman Anda.';
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
@@ -314,46 +335,45 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // 4. Fungsi Edit Alamat
-  void _editAlamatDialog() {
-    TextEditingController alamatController = TextEditingController(
-      text: globalAlamat == 'Alamat belum diatur. Ketuk ikon pensil untuk mengisi alamat pengiriman Anda.' ? '' : globalAlamat,
+  // Alamat disimpan ke MySQL lewat PHP API.
+  Future<void> _editAlamatDialog() async {
+    final controller = TextEditingController(
+      text: ApiService.alamat ?? '',
     );
-
-    showDialog(
+    final baru = await showDialog<String>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Atur Alamat Pengiriman', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          content: TextField(
-            controller: alamatController,
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: 'Ketik alamat lengkap Anda di sini...',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            ),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Atur Alamat Pengiriman'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          maxLength: 500,
+          decoration: const InputDecoration(
+            hintText: 'Alamat lengkap pengiriman',
+            border: OutlineInputBorder(),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Batal', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  if (alamatController.text.isNotEmpty) {
-                    globalAlamat = alamatController.text;
-                  }
-                });
-                Navigator.pop(context);
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
-              child: const Text('Simpan'),
-            ),
-          ],
-        );
-      },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Batal')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Simpan')),
+        ],
+      ),
     );
+    controller.dispose();
+    if (!mounted || baru == null) return;
+    try {
+      await ApiService.simpanAlamat(baru);
+      if (!mounted) return;
+      setState(sinkronProfilLokal);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alamat tersimpan di MySQL')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   @override
@@ -426,16 +446,20 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Stack(
                   alignment: Alignment.bottomRight,
                   children: [
-                    Container(
-                      width: 70, height: 70,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.black87, width: 1.5),
-                        image: DecorationImage(
-                          image: _imageFile != null 
-                              ? FileImage(_imageFile!) as ImageProvider 
-                              : const AssetImage('assets/profile_pic.png'), 
-                          fit: BoxFit.cover
+                    ValueListenableBuilder<ImageProvider?>(
+                      valueListenable: fotoProfilNotifier,
+                      builder: (context, photo, _) => Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.black87, width: 1.5),
+                          image: DecorationImage(
+                            image: photo != null
+                                ? photo
+                                : const AssetImage('assets/profile_pic.png') as ImageProvider,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                     ),
@@ -1977,7 +2001,8 @@ class _LoginPageState extends State<LoginPage> {
     }
     setState(() => _isLoading = true);
     try {
-      await ApiService.login(_emailController.text.trim(), _passwordController.text);
+      await ApiService.login(_emailController.text.trim(), _passwordController.text, rememberMe: _rememberMe);
+      sinkronProfilLokal();
       await _saveRecentEmail(_emailController.text.trim());
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => halamanSesuaiRole()), (route) => false);
@@ -2305,15 +2330,20 @@ class _BottomNavProfileIcon extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.black87, width: 1.5),
-              image: const DecorationImage(
-                image: AssetImage('assets/photo_profile.png'), // Pastikan nama file ini sama
-                fit: BoxFit.cover,
+          ValueListenableBuilder<ImageProvider?>(
+            valueListenable: fotoProfilNotifier,
+            builder: (context, photo, _) => Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black87, width: 1.5),
+                image: DecorationImage(
+                  image: photo != null
+                      ? photo
+                      : const AssetImage('assets/profile_pic.png') as ImageProvider,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
           ),
