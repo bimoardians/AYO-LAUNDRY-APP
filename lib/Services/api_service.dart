@@ -54,8 +54,13 @@ class ApiService {
     role = user['role']?.toString();
     alamat = user['alamat']?.toString();
     final photo = user['foto_profil']?.toString();
-    fotoUrl = (photo == null || photo.isEmpty) ? null :
-        '$baseUrl/$photo';
+    if (photo == null || photo.isEmpty) {
+      fotoUrl = null;
+    } else if (Uri.tryParse(photo)?.hasScheme == true) {
+      fotoUrl = photo;
+    } else {
+      fotoUrl = '$baseUrl/${photo.replaceFirst(RegExp(r'^/+'), '')}';
+    }
   }
 
   static Future<void> login(String emailInput, String password,
@@ -121,7 +126,9 @@ class ApiService {
     }, auth: true);
     final photo = result['foto_profil']?.toString();
     if (photo == null || photo.isEmpty) throw Exception('Server tidak mengembalikan alamat foto.');
-    fotoUrl = '$baseUrl/$photo';
+    fotoUrl = photo.startsWith('http://') || photo.startsWith('https://')
+        ? photo
+        : '$baseUrl/${photo.replaceFirst(RegExp(r'^/+'), '')}';
   }
 
   static Future<void> ubahNama(String namaBaru) async {
