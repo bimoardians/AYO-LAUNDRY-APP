@@ -162,6 +162,164 @@ class ApiService {
     }
   }
 
+
+  static Future<Map<String, dynamic>> _get(String path, {Map<String, String>? query}) async {
+    final token = _token ?? await _storage.read(key: 'auth_token');
+    if (token == null || token.isEmpty) throw Exception('Sesi habis. Silakan login kembali.');
+    try {
+      final uri = Uri.parse('$baseUrl/$path').replace(queryParameters: query);
+      final response = await http.get(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      }).timeout(const Duration(seconds: 20));
+      return _decodeResponse(response);
+    } on FormatException {
+      throw Exception('Respons server bukan JSON. Periksa PHP API.');
+    } on http.ClientException {
+      throw Exception('Tidak bisa tersambung ke server. Periksa Apache/XAMPP.');
+    }
+  }
+
+  static Map<String, dynamic> _decodeResponse(http.Response response) {
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) throw Exception('Format respons server tidak valid.');
+    if (response.statusCode == 401) throw ApiUnauthorizedException();
+    if (response.statusCode < 200 || response.statusCode >= 300 || decoded['success'] != true) {
+      throw Exception(decoded['message']?.toString() ?? 'Permintaan gagal (${response.statusCode}).');
+    }
+    return decoded;
+  }
+
+  // Data layanan selalu berasal dari MySQL. Harga dari Flutter hanya untuk estimasi tampilan;
+  // create_order.php menghitung ulang harga dari database.
+  static Future<List<Map<String, dynamic>>> getServices() async {
+    final data = await _get('services.php');
+    final list = data['services'];
+    if (list is! List) throw Exception('Format daftar layanan tidak valid.');
+    return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  static Future<void> updateService({required int id, required int price, required bool active}) async {
+    await _request('services.php', {
+      'id': id,
+      'unit_price': price,
+      'is_active': active ? 1 : 0,
+    }, auth: true);
+  }
+
+  static Future<List<Map<String, dynamic>>> getPromos() async {
+    final data = await _get('promos.php');
+    final list = data['promos'];
+    if (list is! List) throw Exception('Format daftar promo tidak valid.');
+    return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> getAdminPromos() async {
+    final data = await _get('promos.php');
+    final list = data['promos'];
+    if (list is! List) throw Exception('Format daftar promo tidak valid.');
+    return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  static Future<void> createPromo({
+    required String code,
+    required String title,
+    required String description,
+    required String discountType,
+    required int discountValue,
+    required int minSubtotal,
+    int? maxDiscount,
+    int? usageLimit,
+  }) async {
+    await _request('promos.php', {
+      'action': 'create',
+      'code': code,
+      'title': title,
+      'description': description,
+      'discount_type': discountType,
+      'discount_value': discountValue,
+      'min_subtotal': minSubtotal,
+      'max_discount': maxDiscount,
+      'usage_limit': usageLimit,
+    }, auth: true);
+  }
+
+  static Future<void> togglePromo({required int id, required bool active}) async {
+    await _request('promos.php', {
+      'action': 'toggle',
+      'id': id,
+      'is_active': active ? 1 : 0,
+    }, auth: true);
+  }
+
+  static Future<Map<String, dynamic>> createOrder({
+    required List<Map<String, dynamic>> items,
+    String? promoCode,
+    required String paymentMethod,
+  }) async {
+    final data = await _request('create_order.php', {
+      'items': items,
+      'promo_code': promoCode ?? '',
+      'payment_method': paymentMethod,
+    }, auth: true);
+    final order = data['order'];
+    if (order is! Map) throw Exception('Server tidak mengembalikan data pesanan.');
+    return Map<String, dynamic>.from(order);
+  }
+
+  static Future<List<Map<String, dynamic>>> getMyOrders() async {
+    final data = await _get('my_orders.php');
+    final list = data['orders'];
+    if (list is! List) throw Exception('Format riwayat pesanan tidak valid.');
+    return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  static Future<Map<String, dynamic>> createMidtransSandboxPayment(int orderId) async {
+    final data = await _request('create_payment.php', {'order_id': orderId}, auth: true);
+    return Map<String, dynamic>.from(data);
+  }
+
+  static Future<Map<String, dynamic>> getPaymentStatus(int orderId) async {
+    final data = await _get('payment_status.php', query: {'order_id': '$orderId'});
+    final order = data['order'];
+    if (order is! Map) throw Exception('Status pesanan tidak tersedia.');
+    return Map<String, dynamic>.from(order);
+  }
+
+  static Future<List<Map<String, dynamic>>> getAdminOrders() async {
+    final data = await _get('admin_orders.php');
+    final list = data['orders'];
+    if (list is! List) throw Exception('Format pesanan Admin tidak valid.');
+    return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  static Future<void> updateAdminOrderStatus(int orderId, String status) async {
+    await _request('admin_orders.php', {
+      'action': 'update_status',
+      'order_id': orderId,
+      'order_status': status,
+    }, auth: true);
+  }
+
+  static Future<void> markCodPaid(int orderId) async {
+    await _request('admin_orders.php', {
+      'action': 'mark_cod_paid',
+      'order_id': orderId,
+    }, auth: true);
+  }
+
+  static Future<Map<String, dynamic>> getAdminNotifications() async {
+    return _get('notifications.php');
+  }
+
+  static Future<void> markNotificationRead(int id) async {
+    await _request('notifications.php', {'id': id}, auth: true);
+  }
+
+  static Future<void> markAllNotificationsRead() async {
+    await _request('notifications.php', {'action': 'mark_all'}, auth: true);
+  }
+
   static Future<void> logout() async {
     try {
       await _request('logout.php', {}, auth: true);

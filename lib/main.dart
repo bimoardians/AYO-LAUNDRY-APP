@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'services/api_service.dart';
 import 'admin_owner_pages.dart';
 import 'package:image_picker/image_picker.dart'; // Wajib ditambahin buat buka galeri
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' as foundation;
 
 // --- VARIABEL GLOBAL ALAMAT & HISTORY ---
@@ -10,6 +11,7 @@ String globalAlamat = 'Alamat belum diatur. Ketuk ikon pensil untuk mengisi alam
 int globalCountKilat = 0;
 int globalCountRegular = 0;
 int globalCountSetrika = 0;
+String? selectedPromoCode;
 
 // Foto profil bersama untuk halaman Profil dan bottom navigation.
 // Gambar diambil dari URL server setelah profil dimuat; MemoryImage dipakai
@@ -890,463 +892,231 @@ class InboxPage extends StatelessWidget {
 }
 
 // ==========================================
-// HALAMAN 4: PROMO PAGE
+// HALAMAN 4: PROMO PAGE (DINAMIS DARI MYSQL)
 // ==========================================
-class PromoPage extends StatelessWidget {
+class PromoPage extends StatefulWidget {
   const PromoPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Latar Belakang Diagonal
-          Positioned.fill(
-            child: CustomPaint(
-              painter: DiagonalBackgroundPainter(),
-            ),
-          ),
-          
-          SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(),
-                
-                // Konten Utama Promo (Bisa di-scroll)
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 10),
-                          _buildPromoBanner(),
-                          const SizedBox(height: 15),
-                          _buildCouponsContainer(),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                
-                // Bottom Navigation Bar Promo
-                _buildPromoBottomNavigationBar(context),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+  State<PromoPage> createState() => _PromoPageState();
+}
+
+class _PromoPageState extends State<PromoPage> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _promos = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPromos();
   }
 
-  // --- Header Sama Seperti Halaman Lain ---
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8.0),
-            child: Image.asset(
-              'assets/ayo_laundry.png',
-              height: 45,
-              fit: BoxFit.cover,
-            ),
-          ),
-          
-        ],
-      ),
-    );
+  Future<void> _loadPromos() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final data = await ApiService.getPromos();
+      if (!mounted) return;
+      setState(() { _promos = data; _loading = false; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _error = '$e'; _loading = false; });
+    }
   }
 
-  // --- Banner Promo (Ada border putihnya sesuai mockup) ---
-  Widget _buildPromoBanner() {
+  String _rupiah(dynamic value) {
+    final n = int.tryParse(value.toString()) ?? 0;
+    return 'Rp${n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')}';
+  }
+
+  String _expiry(dynamic value) {
+    if (value == null || value.toString().isEmpty) return 'Tanpa batas tanggal';
+    final date = DateTime.tryParse(value.toString().replaceFirst(' ', 'T'));
+    if (date == null) return 'Berlaku sesuai ketentuan';
+    return 'Berlaku sampai ${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  void _usePromo(Map<String, dynamic> promo) {
+    selectedPromoCode = promo['code']?.toString();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Kode ${selectedPromoCode ?? ''} dipilih. Lanjutkan ke Pesanan.')),
+    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const PesananPage()));
+  }
+
+  Widget _buildHeader() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+    child: Row(children: [
+      ClipRRect(borderRadius: BorderRadius.circular(8),
+        child: Image.asset('assets/ayo_laundry.png', height: 45, fit: BoxFit.cover)),
+    ]),
+  );
+
+  Widget _buildPromoBanner() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(6),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 5))]),
+    child: ClipRRect(borderRadius: BorderRadius.circular(12),
+      child: Image.asset('assets/ayo_laundry_promo.png', height: 160, width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(height: 160, color: const Color(0xFFE8F5FF),
+          alignment: Alignment.center, child: const Text('PROMO AYO LAUNDRY',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.blue))))),
+  );
+
+  Widget _buildPromoCard(Map<String, dynamic> promo) {
+    final code = promo['code']?.toString() ?? '';
+    final isPercent = promo['discount_type'] == 'percent';
+    final value = int.tryParse('${promo['discount_value']}') ?? 0;
+    final discount = isPercent ? 'Diskon $value%' : 'Diskon ${_rupiah(value)}';
+    final minimum = int.tryParse('${promo['min_subtotal']}') ?? 0;
+    final active = (promo['is_active']?.toString() ?? '1') == '1';
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(6), // Jarak untuk bikin efek border putih
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 5),
-          )
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12), // Melengkungkan ujung gambar
-        child: Image.asset(
-          'assets/ayo_laundry_promo.png', 
-          height: 160,
-          width: double.infinity,
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
-  }
-
-  // --- Wadah Putih untuk List Kupon ---
-  Widget _buildCouponsContainer() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9F9F9), // Putih sedikit keabu-abuan
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 5),
-          )
-        ],
-      ),
-      child: Column(
-        children: [
-          _buildCouponItem(
-            title: 'Kupon diskon 15% persen!',
-            expiry: 'Berlaku Sampai: 1 Juni 2026',
-          ),
-          const SizedBox(height: 30), // Jarak antar kupon
-          _buildCouponItem(
-            title: 'Kupon diskon 10% persen!',
-            expiry: 'Berlaku Sampai: 25 Mei 2026',
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- Desain Tiap Item Kupon ---
-  Widget _buildCouponItem({required String title, required String expiry}) {
-    return Row(
-      children: [
-        // Icon Kupon Warna Orange
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.orange, width: 1.5),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: const Icon(Icons.discount_outlined, color: Colors.orange, size: 24),
-        ),
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200)),
+      child: Row(children: [
+        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(
+          border: Border.all(color: Colors.orange, width: 1.5), borderRadius: BorderRadius.circular(8)),
+          child: const Icon(Icons.discount_outlined, color: Colors.orange, size: 26)),
         const SizedBox(width: 12),
-        
-        // Teks Judul & Tanggal
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                expiry,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        // Tombol "Gunakan" Warna Hijau Terang
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(promo['title']?.toString() ?? discount,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
+          const SizedBox(height: 3),
+          Text('$discount • Kode: $code', style: const TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 3),
+          Text(promo['description']?.toString() ?? '', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text('Min. transaksi ${_rupiah(minimum)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(_expiry(promo['ends_at']), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ])),
+        const SizedBox(width: 8),
         ElevatedButton(
-          onPressed: () {
-            // Aksi kalau kupon dipencet (sementara kosong dulu)
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF76FF03), // Hijau stabilo sesuai mockup
-            foregroundColor: Colors.black87, // Warna teks hitam
-            elevation: 0,
-            minimumSize: const Size(70, 30),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-          child: const Text(
-            'Gunakan',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-          ),
-        )
-      ],
+          onPressed: active ? () => _usePromo(promo) : null,
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF76FF03), foregroundColor: Colors.black87,
+            elevation: 0, minimumSize: const Size(70, 34), padding: const EdgeInsets.symmetric(horizontal: 10)),
+          child: const Text('Gunakan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        ),
+      ]),
     );
   }
 
-  // --- Bottom Navigation Khusus Halaman Promo ---
-  Widget _buildPromoBottomNavigationBar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        color: Color(0xFFFFD54F),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(8),
-          topRight: Radius.circular(8),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _BottomNavIcon(
-            icon: Icons.home_outlined, 
-            label: 'Beranda',
-            onTap: () {
-              Navigator.popUntil(context, (route) => route.isFirst);
-            },
-          ),
-          // Tombol Pindah ke Pesanan
-          _BottomNavIcon(
-            icon: Icons.receipt_long_outlined, 
-            label: 'Pesanan',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const PesananPage()),
-              );
-            },
-          ),
-          
-          // Icon Promo Aktif (nggak butuh onTap karena lagi di sini)
-          // Tombol Pindah ke Promo
-          _BottomNavIcon(
-            icon: Icons.local_offer_outlined, 
-            label: 'Promo',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const PromoPage()),
-              );
-            },
-          ),
-          
-          _BottomNavIcon(
-            icon: Icons.mail_outline, 
-            label: 'Inbox',
-            onTap: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const InboxPage()),
-              );
-            },
-          ),
-          // Tombol Pindah ke Profile (Ganti pakai ini)
-          _BottomNavProfileIcon(
-            onTap: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const ProfilePage()),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildBottomNavigationBar(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    decoration: const BoxDecoration(color: Color(0xFFFFD54F), borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
+    child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+      _BottomNavIcon(icon: Icons.home_outlined, label: 'Beranda', onTap: () => Navigator.popUntil(context, (route) => route.isFirst)),
+      _BottomNavIcon(icon: Icons.receipt_long_outlined, label: 'Pesanan', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PesananPage()))),
+      const _BottomNavIcon(icon: Icons.local_offer_outlined, label: 'Promo'),
+      _BottomNavIcon(icon: Icons.mail_outline, label: 'Inbox', onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const InboxPage()))),
+      _BottomNavProfileIcon(onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const ProfilePage()))),
+    ]),
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Stack(children: [
+      Positioned.fill(child: CustomPaint(painter: DiagonalBackgroundPainter())),
+      SafeArea(child: Column(children: [
+        _buildHeader(),
+        Expanded(child: RefreshIndicator(
+          onRefresh: _loadPromos,
+          child: ListView(padding: const EdgeInsets.symmetric(horizontal: 20), children: [
+            const SizedBox(height: 10),
+            _buildPromoBanner(),
+            const SizedBox(height: 18),
+            Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: const Color(0xFFF9F9F9),
+              borderRadius: BorderRadius.circular(16), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)]),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const Text('Promo & Kupon Aktif', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 14),
+                if (_loading) const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())),
+                if (_error != null) Column(children: [Text(_error!, style: const TextStyle(color: Colors.red)),
+                  TextButton.icon(onPressed: _loadPromos, icon: const Icon(Icons.refresh), label: const Text('Coba lagi'))]),
+                if (!_loading && _error == null && _promos.isEmpty) const Text('Belum ada promo aktif.'),
+                if (!_loading && _error == null) ..._promos.map(_buildPromoCard),
+              ])),
+            const SizedBox(height: 20),
+          ]),
+        )),
+        _buildBottomNavigationBar(context),
+      ])),
+    ]),
+  );
 }
 
 // ==========================================
-// HALAMAN 5: PESANAN PAGE (FULL MENU LAUNDRY)
+// HALAMAN 5: PESANAN PAGE (LAYANAN DARI MYSQL)
 // ==========================================
 class PesananPage extends StatefulWidget {
   const PesananPage({super.key});
-
   @override
   State<PesananPage> createState() => _PesananPageState();
 }
 
 class _PesananPageState extends State<PesananPage> {
-  // Map dinamis untuk menyimpan jumlah pesanan tiap item
-  Map<String, int> keranjang = {};
-
-  // Fungsi untuk menambah/mengurangi item
-  void _updateKeranjang(String namaItem, int perubahan) {
-  setState(() {
-    int jumlahSekarang = keranjang[namaItem] ?? 0;
-
-    // Cek apakah item termasuk layanan kiloan minimum 3 KG
-    bool isKiloan = namaItem.startsWith('CUCI SETRIKA') ||
-        namaItem.startsWith('CUCI LIPAT') ||
-        namaItem.startsWith('SETRIKA');
-
-    int jumlahBaru;
-
-    if (isKiloan) {
-      // Saat pertama kali tekan +
-      if (jumlahSekarang == 0 && perubahan > 0) {
-        jumlahBaru = 3;
-      }
-      // Saat jumlah 3 KG dan tekan -
-      else if (jumlahSekarang == 3 && perubahan < 0) {
-        jumlahBaru = 0;
-      }
-      // Normal
-      else {
-        jumlahBaru = jumlahSekarang + perubahan;
-      }
-    } else {
-      // Item satuan biasa
-      jumlahBaru = jumlahSekarang + perubahan;
-    }
-
-    if (jumlahBaru > 0) {
-      keranjang[namaItem] = jumlahBaru;
-    } else {
-      keranjang.remove(namaItem);
-    }
-  });
-}
-
-  // Fungsi untuk menentukan harga setiap item
-  int _getHarga(String namaItem) {
-    if (namaItem.startsWith('CUCI SETRIKA')) return 7000;
-    if (namaItem.startsWith('CUCI LIPAT')) return 5000;
-    if (namaItem.startsWith('SETRIKA')) return 5000;
-    if (namaItem.startsWith('EXPRESS 6 JAM : +3 K')) return 3000;
-    if (namaItem.startsWith('EXPRESS 4 JAM : +6 K')) return 6000;
-
-    if (namaItem.startsWith('KAOS')) return 15000;
-    if (namaItem.startsWith('KEMEJA')) return 15000;
-    if (namaItem.startsWith('CELANA')) return 15000;
-    if (namaItem.startsWith('JAKET')) return 15000;
-    if (namaItem.startsWith('SPREI')) return 15000;
-    if (namaItem.startsWith('SELIMUT')) return 15000;
-    if (namaItem.startsWith('DRESS SHORT')) return 20000;
-    if (namaItem.startsWith('DRESS LONG')) return 30000;
-    if (namaItem.startsWith('BED COVER S')) return 20000;
-    if (namaItem.startsWith('BED COVER M')) return 25000;
-    if (namaItem.startsWith('BED COVER L')) return 30000;
-    if (namaItem.startsWith('KARPET')) return 20000;
-    if (namaItem.startsWith('EXPRESS 6 JAM : + 5 K')) return 5000;
-    if (namaItem.startsWith('EXPRESS 4 JAM : +10 K')) return 10000;
-
-    if (namaItem.startsWith('HELM')) return 20000;
-    if (namaItem.startsWith('TAS')) return 20000;
-    if (namaItem.startsWith('SEPATU')) return 25000;
-    if (namaItem.startsWith('BONEKA 20')) return 20000;
-    if (namaItem.startsWith('BONEKA 30')) return 30000;
-    if (namaItem.startsWith('BONEKA 40')) return 40000;
-    if (namaItem.startsWith('BONEKA 65')) return 65000;
-    if (namaItem.startsWith('BONEKA 85')) return 85000;
-    if (namaItem.startsWith('EXPRESS 6 JAM : + 10K')) return 10000;
-    if (namaItem.startsWith('EXPRESS 4 JAM : + 20K')) return 20000;
-
-    return 0;
-  }
+  final Map<int, int> _cart = {};
+  List<Map<String, dynamic>> _services = [];
+  bool _loading = true;
+  String? _error;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-  leading: IconButton(
-    icon: const Icon(
-      Icons.arrow_back,
-      color: Colors.black87,
-    ),
-    onPressed: () {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const HomePage(),
-        ),
-        (route) => false,
-      );
-    },
-  ),
-  title: const Text(
-    'Buat Pesanan',
-    style: TextStyle(
-      fontWeight: FontWeight.bold,
-      color: Colors.black87,
-    ),
-  ),
-  backgroundColor: const Color(0xFFFFD54F),
-  elevation: 0,
-  centerTitle: true,
-),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _buildKategoriCard(
-                  'KILOAN (1 HARI)', //[cite: 10]
-                  [
-                    'CUCI SETRIKA : 7 K (MIN 3 KG)', //[cite: 10]
-                    'CUCI LIPAT : 5 K (MIN 3 KG)', //[cite: 10]
-                    'SETRIKA : 5 K (MIN 3 KG)', //[cite: 10]
-                    'EXPRESS 6 JAM : +3 K / KG', //[cite: 10]
-                    'EXPRESS 4 JAM : +6 K / KG', //[cite: 10]
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildKategoriCard(
-                  'SATUAN (3 HARI)', //[cite: 10]
-                  [
-                    'KAOS : 15 K', //[cite: 10]
-                    'KEMEJA : 15 K', //[cite: 10]
-                    'CELANA : 15 K', //[cite: 10]
-                    'JAKET : 15 K', //[cite: 10]
-                    'SPREI : 15 K', //[cite: 10]
-                    'SELIMUT : 15 K', //[cite: 10]
-                    'DRESS SHORT : 20 K', //[cite: 10]
-                    'DRESS LONG : 30 K', //[cite: 10]
-                    'BED COVER S : 20 K', //[cite: 10]
-                    'BED COVER M : 25 K', //[cite: 10]
-                    'BED COVER L : 30 K', //[cite: 10]
-                    'KARPET /MTR : 20 K', //[cite: 10]
-                    'EXPRESS 6 JAM : + 5 K / PCS', //[cite: 10]
-                    'EXPRESS 4 JAM : +10 K / PCS', //[cite: 10]
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildKategoriCard(
-                  'JUGA SEDIA CUCI', //[cite: 11]
-                  [
-                    'HELM 20 K', //[cite: 11]
-                    'TAS 20 K', //[cite: 11]
-                    'SEPATU 25 K', //[cite: 11]
-                    'BONEKA 20(S)', //[cite: 11]
-                    'BONEKA 30(M)', //[cite: 11]
-                    'BONEKA 40(L)', //[cite: 11]
-                    'BONEKA 65(XL)', //[cite: 11]
-                    'BONEKA 85(XXL)', //[cite: 11]
-                    'EXPRESS 6 JAM : + 10K', //[cite: 11]
-                    'EXPRESS 4 JAM : + 20K', //[cite: 11]
-                  ],
-                ),
-              ],
-            ),
-          ),
-          _buildCheckoutBar(),
-        ],
-      ),
-    );
+  void initState() {
+    super.initState();
+    _loadServices();
   }
 
-  // Kategori dapat dibuka/ditutup tanpa menghapus jumlah yang sudah dipilih.
-  Widget _buildKategoriCard(String judul, List<String> items) {
+  Future<void> _loadServices() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final data = await ApiService.getServices();
+      if (!mounted) return;
+      setState(() { _services = data; _loading = false; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _error = '$e'; _loading = false; });
+    }
+  }
+
+  int _integer(dynamic value) => int.tryParse(value.toString()) ?? 0;
+  String _rupiah(int value) => 'Rp${value.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')}';
+
+  void _changeQuantity(Map<String, dynamic> service, int change) {
+    final id = _integer(service['id']);
+    final minimum = _integer(service['min_qty']).clamp(1, 500).toInt();
+    final current = _cart[id] ?? 0;
+    int next;
+    if (change > 0) {
+      next = current == 0 ? minimum : current + 1;
+    } else {
+      next = current <= minimum ? 0 : current - 1;
+    }
+    setState(() {
+      if (next <= 0) { _cart.remove(id); } else { _cart[id] = next; }
+    });
+  }
+
+  List<Map<String, dynamic>> get _checkoutItems => _cart.entries
+      .map((entry) => {'service_id': entry.key, 'quantity': entry.value})
+      .toList();
+
+  int get _totalItems => _cart.values.fold(0, (sum, quantity) => sum + quantity);
+
+  int get _estimatedTotal => _cart.entries.fold(0, (sum, entry) {
+    final service = _services.firstWhere((s) => _integer(s['id']) == entry.key, orElse: () => {});
+    return sum + (_integer(service['unit_price']) * entry.value);
+  });
+
+  Widget _buildCategoryCard(String category, List<Map<String, dynamic>> services) {
     return Card(
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 2,
       margin: EdgeInsets.zero,
       child: ExpansionTile(
-        key: PageStorageKey<String>('kategori_$judul'),
+        key: PageStorageKey<String>('kategori_$category'),
         initiallyExpanded: false,
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
         childrenPadding: EdgeInsets.zero,
@@ -1356,648 +1126,285 @@ class _PesananPageState extends State<PesananPage> {
         textColor: Colors.white,
         collapsedIconColor: Colors.white,
         iconColor: Colors.white,
-        // Header tetap biru gelap saat bagian dibuka.
         shape: const Border(),
         collapsedShape: const Border(),
-        title: Text(
-          judul,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        children: [
-          Container(
-            color: const Color(0xFFF8F5FA),
-            child: Column(children: [
-          for (int index = 0; index < items.length; index++) ...[
+        title: Text(category, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        children: [Container(color: const Color(0xFFF8F5FA), child: Column(children: [
+          for (int index = 0; index < services.length; index++) ...[
             if (index > 0) const Divider(height: 1),
             Builder(builder: (context) {
-              final namaItem = items[index];
-              final qty = keranjang[namaItem] ?? 0;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        namaItem,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => _updateKeranjang(namaItem, -1),
-                      icon: const Icon(Icons.remove, color: Colors.red),
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFD8DC),
-                        minimumSize: const Size(32, 32),
-                        padding: const EdgeInsets.all(4),
-                      ),
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    ),
-                    SizedBox(
-                      width: 36,
-                      child: Text(
-                        '$qty',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => _updateKeranjang(namaItem, 1),
-                      icon: const Icon(Icons.add, color: Colors.green),
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFFCBF1D6),
-                        minimumSize: const Size(32, 32),
-                        padding: const EdgeInsets.all(4),
-                      ),
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    ),
-                  ],
-                ),
-              );
+              final service = services[index];
+              final id = _integer(service['id']);
+              final qty = _cart[id] ?? 0;
+              final unit = service['unit_label']?.toString() ?? 'pcs';
+              final min = _integer(service['min_qty']);
+              return Padding(padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 12),
+                child: Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(service['name']?.toString() ?? '-', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
+                    Text('${_rupiah(_integer(service['unit_price']))} / $unit${min > 1 ? ' • Min $min $unit' : ''}',
+                      style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                  ])),
+                  IconButton(onPressed: () => _changeQuantity(service, -1), icon: const Icon(Icons.remove, color: Colors.red),
+                    style: IconButton.styleFrom(backgroundColor: const Color(0xFFFFD8DC), minimumSize: const Size(32,32), padding: const EdgeInsets.all(4)),
+                    constraints: const BoxConstraints(minWidth: 32,minHeight: 32)),
+                  SizedBox(width: 36, child: Text('$qty', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
+                  IconButton(onPressed: () => _changeQuantity(service, 1), icon: const Icon(Icons.add, color: Colors.green),
+                    style: IconButton.styleFrom(backgroundColor: const Color(0xFFCBF1D6), minimumSize: const Size(32,32), padding: const EdgeInsets.all(4)),
+                    constraints: const BoxConstraints(minWidth: 32,minHeight: 32)),
+                ]));
             }),
           ],
-            ]),
-          ),
-        ],
+        ]))],
       ),
     );
   }
 
-  // Desain Bar Bawah untuk Lanjut Pembayaran
-Widget _buildCheckoutBar() {
-  int totalItem = keranjang.values.fold(0, (sum, item) => sum + item);
-
-  int totalHarga = keranjang.entries.fold(0, (sum, entry) {
-    final harga = _getHarga(entry.key);
-    final qty = entry.value;
-    return sum + (harga * qty);
-  });
-
-  String formattedHarga = totalHarga
-      .toString()
-      .replaceAll(RegExp(r'\B(?=(\d{3})+(?!\d))'), '.');
-
-  return Container(
-    padding: const EdgeInsets.all(20),
-    decoration: const BoxDecoration(
-      color: Colors.white,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black12,
-          blurRadius: 10,
-          offset: Offset(0, -5),
-        ),
-      ],
-    ),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Row(
-          children: [
-            // TOTAL ITEM
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Total Item:',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 13,
-                  ),
-                ),
-                Text(
-                  '$totalItem',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(width: 30),
-
-            // TOTAL HARGA
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Total Harga:',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 13,
-                  ),
-                ),
-                Text(
-                  'Rp$formattedHarga',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-
-        // TOMBOL LANJUT BAYAR
-        ElevatedButton(
-          onPressed: totalItem > 0
-              ? () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const PembayaranPage(),
-                    ),
-                  );
-                }
-              : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFFD54F),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 30,
-              vertical: 15,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          child: const Text(
-            'Lanjut Bayar',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ],
-    ),
+  Widget _buildCheckoutBar() => Container(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+    decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0,-5))]),
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      if (selectedPromoCode != null) Row(children: [
+        const Icon(Icons.discount_outlined, color: Colors.green, size: 16),
+        const SizedBox(width: 6),
+        Expanded(child: Text('Promo dipilih: $selectedPromoCode', style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600))),
+        TextButton(onPressed: () => setState(() => selectedPromoCode = null), child: const Text('Hapus')),
+      ]),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Row(children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Total Item', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            Text('$_totalItems', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19))]),
+          const SizedBox(width: 24),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Estimasi Harga', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            Text(_rupiah(_estimatedTotal), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18))]),
+        ]),
+        ElevatedButton(onPressed: _cart.isEmpty ? null : () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => PembayaranPage(items: _checkoutItems, promoCode: selectedPromoCode)));
+        }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFD54F), foregroundColor: Colors.black87),
+          child: const Text('Lanjut Bayar')),
+      ]),
+      const SizedBox(height: 3),
+      const Text('Harga akhir dan promo akan dihitung ulang oleh server.', style: TextStyle(fontSize: 10, color: Colors.grey)),
+    ]),
   );
+
+  Widget _buildBottomNavigationBar(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    decoration: const BoxDecoration(color: Color(0xFFFFD54F), borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
+    child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+      _BottomNavIcon(icon: Icons.home_outlined,label:'Beranda',onTap:()=>Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const HomePage()),(r)=>false)),
+      const _BottomNavIcon(icon: Icons.receipt_long_outlined,label:'Pesanan'),
+      _BottomNavIcon(icon: Icons.local_offer_outlined,label:'Promo',onTap:()=>Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>const PromoPage()))),
+      _BottomNavIcon(icon: Icons.mail_outline,label:'Inbox',onTap:()=>Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>const InboxPage()))),
+      _BottomNavProfileIcon(onTap:()=>Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>const ProfilePage()))),
+    ]),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    for (final service in _services) {
+      final category = service['category']?.toString() ?? 'Layanan lainnya';
+      grouped.putIfAbsent(category, () => []).add(service);
+    }
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(title: const Text('Buat Pesanan', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+        backgroundColor: const Color(0xFFFFD54F), elevation: 0, centerTitle: true,
+        leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black87), onPressed: () => Navigator.pop(context))),
+      body: Column(children: [
+        Expanded(child: _loading ? const Center(child: CircularProgressIndicator()) : _error != null
+          ? Center(child: Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
+              TextButton.icon(onPressed: _loadServices, icon: const Icon(Icons.refresh), label: const Text('Muat ulang layanan')),
+            ])))
+          : RefreshIndicator(onRefresh: _loadServices, child: ListView(padding: const EdgeInsets.all(16), children: [
+              if (grouped.isEmpty) const Text('Belum ada layanan aktif.'),
+              for (final entry in grouped.entries) ...[
+                _buildCategoryCard(entry.key, entry.value),
+                const SizedBox(height: 16),
+              ],
+            ]))),
+        _buildCheckoutBar(),
+      ]),
+      bottomNavigationBar: _buildBottomNavigationBar(context),
+    );
+  }
 }
-}
-  // --- Header ---
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8.0),
-            child: Image.asset(
-              'assets/ayo_laundry.png',
-              height: 45,
-              fit: BoxFit.cover,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- Widget Kustom untuk Baris Item Pesanan dengan Plus/Minus ---
-  Widget _buildOrderItem({
-    required String title,
-    required int price,
-    required int qty,
-    required IconData icon,
-    required VoidCallback onAdd,
-    required VoidCallback onRemove,
-  }) {
-    // Format angka ribuan sederhana
-    String formattedPrice = price.toString().replaceAll(RegExp(r'\B(?=(\d{3})+(?!\d))'), ".");
-    String formattedTotal = (price * qty).toString().replaceAll(RegExp(r'\B(?=(\d{3})+(?!\d))'), ".");
-
-    return Row(
-      children: [
-        // Kotak Icon
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE8F5E9), // Hijau sangat muda pudar
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: Colors.black87, size: 28),
-        ),
-        const SizedBox(width: 15),
-        
-        // Teks Judul & Perhitungan
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Rp:$formattedPrice x ${qty}Kg = $formattedTotal',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-
-        // Tombol Plus Minus
-        Row(
-          children: [
-            InkWell(
-              onTap: onRemove,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade100,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Icon(Icons.remove, size: 16, color: Colors.red),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Text(
-                '$qty',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-            InkWell(
-              onTap: onAdd,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade100,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Icon(Icons.add, size: 16, color: Colors.green),
-              ),
-            ),
-          ],
-        )
-      ],
-    );
-  }
-
-  // --- Bottom Nav ---
-  Widget _buildPesananBottomNavigationBar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        color: Color(0xFFFFD54F),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(8),
-          topRight: Radius.circular(8),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _BottomNavIcon(
-            icon: Icons.home_outlined, 
-            label: 'Beranda',
-            onTap: () => Navigator.popUntil(context, (route) => route.isFirst),
-          ),
-          
-          // Icon Pesanan Aktif
-          // Tombol Pindah ke Pesanan
-          _BottomNavIcon(
-            icon: Icons.receipt_long_outlined, 
-            label: 'Pesanan',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const PesananPage()),
-              );
-            },
-          ),
-          
-          _BottomNavIcon(
-            icon: Icons.local_offer_outlined, 
-            label: 'Promo',
-            onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const PromoPage())),
-          ),
-          _BottomNavIcon(
-            icon: Icons.mail_outline, 
-            label: 'Inbox',
-            onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const InboxPage())),
-          ),
-          // KODE BARU PAKAI FOTO PROFIL
-          _BottomNavProfileIcon(
-            onTap: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const ProfilePage()),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
 
 // ==========================================
-// HALAMAN 6: PEMBAYARAN PAGE (STATEFUL)
+// HALAMAN 6: PEMBAYARAN (COD + MIDTRANS SANDBOX)
 // ==========================================
 class PembayaranPage extends StatefulWidget {
-  const PembayaranPage({super.key});
-
+  const PembayaranPage({super.key, required this.items, this.promoCode});
+  final List<Map<String, dynamic>> items;
+  final String? promoCode;
   @override
   State<PembayaranPage> createState() => _PembayaranPageState();
 }
 
 class _PembayaranPageState extends State<PembayaranPage> {
-  // Variabel untuk menyimpan metode pembayaran yang dipilih
-  String _selectedPayment = 'COD'; // Default terpilih
+  String _selectedPayment = 'COD';
+  bool _loading = false;
+  Map<String, dynamic>? _createdOrder;
+  String? _paymentUrl;
+  String? _error;
+
+  Future<void> _submitOrder() async {
+    if (_loading) return;
+    setState(() { _loading = true; _error = null; });
+    try {
+      if (_createdOrder == null) {
+        _createdOrder = await ApiService.createOrder(
+          items: widget.items,
+          promoCode: widget.promoCode,
+          paymentMethod: _selectedPayment,
+        );
+        selectedPromoCode = null;
+      }
+      if (_selectedPayment == 'COD') {
+        if (!mounted) return;
+        await _showOrderCreatedDialog();
+      } else {
+        await _createAndOpenPayment();
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _createAndOpenPayment() async {
+    final orderId = int.tryParse('${_createdOrder?['id']}');
+    if (orderId == null) throw Exception('ID pesanan tidak ditemukan.');
+    final payment = await ApiService.createMidtransSandboxPayment(orderId);
+    final url = payment['redirect_url']?.toString();
+    if (url == null || url.isEmpty) throw Exception('Link pembayaran tidak diterima dari server.');
+    if (!mounted) return;
+    setState(() => _paymentUrl = url);
+    final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Browser tidak terbuka. Gunakan tombol Buka Halaman Pembayaran di layar.')));
+    }
+  }
+
+  Future<void> _checkPaymentStatus() async {
+    final orderId = int.tryParse('${_createdOrder?['id']}');
+    if (orderId == null) return;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final status = await ApiService.getPaymentStatus(orderId);
+      if (!mounted) return;
+      setState(() {
+        _createdOrder = {...?_createdOrder, ...status};
+      });
+      final paymentStatus = status['payment_status']?.toString();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+        paymentStatus == 'settlement' || paymentStatus == 'capture'
+          ? 'Pembayaran sudah dikonfirmasi server.'
+          : 'Status pembayaran: ${paymentStatus ?? 'belum tersedia'}')));
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _showOrderCreatedDialog() async {
+    final code = _createdOrder?['order_code']?.toString() ?? '-';
+    final total = int.tryParse('${_createdOrder?['total']}') ?? 0;
+    final amount = 'Rp${total.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')}';
+    await showDialog<void>(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(
+      title: const Column(children: [Icon(Icons.check_circle, color: Colors.green, size: 56), SizedBox(height: 10), Text('Pesanan Tersimpan')]),
+      content: Text('Nomor: $code\nTotal: $amount\nMetode: COD\n\nPesanan sudah masuk ke sistem dan menunggu konfirmasi Admin. Pembayaran dilakukan saat serah terima.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Tutup')),
+        FilledButton(onPressed: () { Navigator.pop(ctx); Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const HomePage()), (r) => false); }, child: const Text('Kembali ke Beranda'))],
+    ));
+  }
+
+  Widget _paymentOption(String title, String value, IconData icon, String subtitle) => InkWell(
+    onTap: _createdOrder == null ? () => setState(() => _selectedPayment = value) : null,
+    child: Container(margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _selectedPayment == value ? Colors.blue : Colors.grey.shade300, width: _selectedPayment == value ? 2 : 1)),
+      child: Row(children: [Icon(icon, color: Colors.blueGrey, size: 28), const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey))])),
+        Radio<String>(value: value, groupValue: _selectedPayment, onChanged: _createdOrder == null ? (v) => setState(() => _selectedPayment = v!) : null),
+      ]),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
+    final code = _createdOrder?['order_code']?.toString();
+    final total = int.tryParse('${_createdOrder?['total']}') ?? 0;
+    final orderStatus = _createdOrder?['order_status']?.toString() ?? 'menunggu_pembayaran';
+    final paymentStatus = _createdOrder?['payment_status']?.toString() ?? 'pending';
     return Scaffold(
-      body: Stack(
-        children: [
-          // Latar Belakang Diagonal
-          Positioned.fill(
-            child: CustomPaint(
-              painter: DiagonalBackgroundPainter(),
-            ),
-          ),
-          
-          SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(),
-                
-                // Kontainer Putih Pilihan Pembayaran
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                    child: Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(top: 20, bottom: 20),
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9F9F9),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 10,
-                            offset: Offset(0, 5),
-                          )
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Pilih Metode Pembayaran',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          
-                          // List Pembayaran yang bisa di-scroll
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: Column(
-                                children: [
-                                  _buildPaymentOption('Cash on Delivery (COD)', 'COD', Icons.money),
-                                  _buildPaymentOption('DANA', 'DANA', Icons.account_balance_wallet),
-                                  _buildPaymentOption('ShopeePay', 'ShopeePay', Icons.shopping_bag),
-                                  _buildPaymentOption('GoPay', 'GoPay', Icons.motorcycle),
-                                  _buildPaymentOption('OVO', 'OVO', Icons.circle),
-                                ],
-                              ),
-                            ),
-                          ),
-                          
-                          // Tombol Lanjutkan Pembayaran
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                // Panggil fungsi Pop-up Dialog
-                                _tampilkanDialogSukses(context, _selectedPayment);
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF76FF03), // Hijau stabilo
-                                foregroundColor: Colors.black87,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: const Text(
-                                'Lanjutkan Pembayaran',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                
-                // Bottom Navigation Bar
-                _buildPembayaranBottomNavigationBar(context),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- Header ---
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8.0),
-            child: Image.asset(
-              'assets/ayo_laundry.png',
-              height: 45,
-              fit: BoxFit.cover,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- Widget Kustom untuk Baris Opsi Pembayaran ---
-  Widget _buildPaymentOption(String title, String value, IconData icon) {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedPayment = value;
-        });
-      },
-      behavior: HitTestBehavior.opaque, // Area klik jadi lebih luas
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(
-            color: _selectedPayment == value ? Colors.blue : Colors.grey.shade300,
-            width: _selectedPayment == value ? 2 : 1,
-          ),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.blueGrey, size: 28),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Colors.black87,
-                ),
-              ),
-            ),
-            Radio<String>(
-              value: value,
-              groupValue: _selectedPayment,
-              activeColor: Colors.blue,
-              onChanged: (String? newValue) {
-                setState(() {
-                  _selectedPayment = newValue!;
-                });
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- Bottom Nav ---
-  Widget _buildPembayaranBottomNavigationBar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        color: Color(0xFFFFD54F),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(8),
-          topRight: Radius.circular(8),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _BottomNavIcon(
-            icon: Icons.home_outlined, 
-            label: 'Beranda',
-            onTap: () => Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const HomePage()),
-              (Route<dynamic> route) => false,
-            ),
-          ),
-          const _BottomNavIcon(icon: Icons.receipt_long_outlined, label: 'Pesanan'),
-          _BottomNavIcon(
-            icon: Icons.local_offer_outlined, 
-            label: 'Promo',
-            onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const PromoPage())),
-          ),
-          _BottomNavIcon(
-            icon: Icons.mail_outline, 
-            label: 'Inbox',
-            onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const InboxPage())),
-          ),
-          _BottomNavProfileIcon(
-            onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const ProfilePage())),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- FUNGSI POP-UP SUKSES DENGAN ALAMAT PENGIRIMAN ---
-  void _tampilkanDialogSukses(BuildContext context, String metodeBayar) {
-    setState(() {
-      globalCountKilat += 1; // Otomatis nambah 1 ke history
-    });
-    showDialog(
-      context: context,
-      barrierDismissible: false, // Biar user gak bisa asal tutup pop-up tanpa pencet tombol OK
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Column(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 60),
-              SizedBox(height: 15),
-              Text(
-                'Pesanan Berhasil!', 
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+      appBar: AppBar(title: const Text('Pembayaran'), backgroundColor: const Color(0xFFFFD54F), foregroundColor: Colors.black87),
+      body: Stack(children: [
+        Positioned.fill(child: CustomPaint(painter: DiagonalBackgroundPainter())),
+        SafeArea(child: Column(children: [
+          Expanded(child: ListView(padding: const EdgeInsets.all(20), children: [
+            Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Pilih Metode Pembayaran', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 14),
+                _paymentOption('Cash on Delivery (COD)', 'COD', Icons.money, 'Bayar saat serah terima dengan Admin/Kurir.'),
+                _paymentOption('Pembayaran Online (Midtrans Sandbox)', 'MIDTRANS', Icons.payment, 'Simulasi pembayaran. Tidak memotong uang sungguhan.'),
+              ])),
+            if (_createdOrder != null) ...[
+              const SizedBox(height: 16),
+              Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Pesanan sudah dibuat', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 8), Text('Nomor: $code'), Text('Total: ${_formatRupiah(total)}'),
+                  Text('Status pesanan: ${orderStatus.replaceAll('_',' ')}'),
+                  Text('Status pembayaran: $paymentStatus'),
+                  if (_paymentUrl != null) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () => launchUrl(Uri.parse(_paymentUrl!), mode: LaunchMode.externalApplication),
+                      icon: const Icon(Icons.open_in_new), label: const Text('Buka Halaman Pembayaran'))),
+                  ],
+                  const SizedBox(height: 6),
+                  SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: _loading ? null : _checkPaymentStatus,
+                    icon: const Icon(Icons.refresh), label: const Text('Periksa Status Pembayaran'))),
+                  if (paymentStatus == 'pending' && _selectedPayment == 'MIDTRANS' && _paymentUrl == null)
+                    SizedBox(width: double.infinity, child: TextButton(onPressed: _loading ? null : _createAndOpenPayment, child: const Text('Coba buat link pembayaran lagi'))),
+                ])),
             ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Metode: $metodeBayar', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-              const SizedBox(height: 20),
-              const Text('Dikirim ke:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 5),
-              Text(
-                globalAlamat, // Ganti teks mati menjadi variabel ini
-                style: const TextStyle(color: Colors.black87, height: 1.4, fontSize: 13),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Kurir AYO LAUNDRY akan segera menjemput pakaian anda.', 
-                style: TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic),
-              ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                child: Text(_error!, style: const TextStyle(color: Colors.red))),
             ],
-          ),
-          actions: [
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  // Tutup dialog dan lempar user kembali ke halaman utama dari awal
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HomePage()),
-                    (Route<dynamic> route) => false,
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFD54F), // Kuning
-                  foregroundColor: Colors.black87,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text('Kembali ke Beranda', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        );
-      },
+            const SizedBox(height: 16),
+            const Text('Catatan: status pembayaran online hanya berubah setelah PHP menerima dan memverifikasi notifikasi resmi dari Midtrans.',
+              style: TextStyle(color: Colors.white, fontSize: 12)),
+          ])),
+          SizedBox(width: double.infinity, child: Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            child: ElevatedButton(onPressed: _loading || _createdOrder != null ? null : _submitOrder,
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF76FF03), foregroundColor: Colors.black87, padding: const EdgeInsets.symmetric(vertical: 15)),
+              child: _loading ? const SizedBox(height: 20,width: 20,child: CircularProgressIndicator(strokeWidth: 2))
+                : Text(_selectedPayment == 'COD' ? 'Buat Pesanan COD' : 'Buat Pesanan & Bayar Online')))),
+        ])),
+      ]),
+      bottomNavigationBar: Container(color: const Color(0xFFFFD54F), padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _BottomNavIcon(icon: Icons.home_outlined,label:'Beranda',onTap:()=>Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const HomePage()),(r)=>false)),
+          const _BottomNavIcon(icon: Icons.receipt_long_outlined,label:'Pesanan'),
+          _BottomNavIcon(icon: Icons.local_offer_outlined,label:'Promo',onTap:()=>Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>const PromoPage()))),
+          _BottomNavIcon(icon: Icons.mail_outline,label:'Inbox',onTap:()=>Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>const InboxPage()))),
+          _BottomNavProfileIcon(onTap:()=>Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>const ProfilePage()))),
+        ])),
     );
   }
+
+  String _formatRupiah(int value) => 'Rp${value.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')}';
 }
 
-// ==========================================
 // HALAMAN 7: LOGIN PAGE (PHP + MYSQL)
 // ==========================================
 class LoginPage extends StatefulWidget {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'services/api_service.dart';
+import 'admin_live_pages.dart';
 import 'main.dart' show LoginPage;
 
 // AYO Laundry - Dashboard Admin dan Owner; UI demo, belum tersambung MySQL.
@@ -87,8 +88,8 @@ class _AdminPageState extends State<AdminPage> {
     onLogout: () => _logoutDashboard(context),
     child: switch (index) {
       0 => _AdminHome(onOpen: (value) => setState(() => index = value)),
-      1 => _RecordEditor(title: 'Kelola Data Layanan', data: LaundryDemoStore.services, kind: 'service'),
-      2 => _RecordEditor(title: 'Kelola Pesanan', data: LaundryDemoStore.orders, kind: 'order'),
+      1 => const AdminServicesPage(),
+      2 => const AdminOrdersPage(),
       _ => _AdminMore(),
     },
   );
@@ -258,14 +259,14 @@ class _AdminHome extends StatelessWidget {
       _Metric('Pengguna', '${LaundryDemoStore.users.length}', Icons.people_outline),
     ])),
     _SectionCard(title: 'Manajemen', child: Column(children: [
-      _MenuTile(title: 'Kelola Data Layanan', icon: Icons.local_laundry_service_outlined, onTap: () => onOpen(1)),
+      _MenuTile(title: 'Kelola Data Layanan & Harga', icon: Icons.local_laundry_service_outlined, onTap: () => onOpen(1)),
       _MenuTile(title: 'Kelola Harga', icon: Icons.price_change_outlined,
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RecordsPage(title: 'Kelola Harga Layanan', data: LaundryDemoStore.services, kind: 'service')))),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminServicesPage()))),
       _MenuTile(title: 'Kelola Pesanan', icon: Icons.receipt_long_outlined, onTap: () => onOpen(2)),
       _MenuTile(title: 'Kelola Promo & Kupon', icon: Icons.discount_outlined,
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RecordsPage(title: 'Kelola Promo & Kupon', data: LaundryDemoStore.promos, kind: 'promo')))),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminPromosPage()))),
       _MenuTile(title: 'Kelola Pembayaran', icon: Icons.payments_outlined,
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RecordsPage(title: 'Kelola Pembayaran', data: LaundryDemoStore.payments, kind: 'payment')))),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminOrdersPage()))),
       _MenuTile(title: 'Kelola Pengguna', icon: Icons.people_outline,
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomerSearchPage()))),
       _MenuTile(title: 'Melihat & Membuat Laporan', icon: Icons.bar_chart_outlined,
@@ -281,9 +282,9 @@ class _AdminMore extends StatelessWidget {
     const SizedBox(height: 14),
     _SectionCard(title: 'Administrasi', child: Column(children: [
       _MenuTile(title: 'Promo & Kupon', icon: Icons.discount_outlined,
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RecordsPage(title: 'Kelola Promo & Kupon', data: LaundryDemoStore.promos, kind: 'promo')))),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminPromosPage()))),
       _MenuTile(title: 'Pembayaran', icon: Icons.payments_outlined,
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RecordsPage(title: 'Kelola Pembayaran', data: LaundryDemoStore.payments, kind: 'payment')))),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminOrdersPage()))),
       _MenuTile(title: 'Pengguna', icon: Icons.people_outlined,
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomerSearchPage()))),
       _MenuTile(title: 'Laporan', icon: Icons.bar_chart_outlined,
