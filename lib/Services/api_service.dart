@@ -7,7 +7,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class ApiService {
   // Emulator Android: 10.0.2.2. HP fisik: ganti IP LAN komputer.
   // Saat rilis: gunakan URL HTTPS server, jangan localhost.
-  static const String baseUrl = 'http://localhost/ayo_laundry_api'; // Flutter Web di PC
+  static const String baseUrl =
+    'https://ayolaundry.lxi.be/ayo_laundry_api';
   static const _storage = FlutterSecureStorage();
   static String? nama;
   static String? email;
